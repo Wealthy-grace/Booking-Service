@@ -1,0 +1,493 @@
+name: Booking Service CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  JAVA_VERSION: '17'
+  DOCKER_IMAGE: 'godfrey10/booking-service'
+
+jobs:
+  # ==========================================
+  # Job 1: Build & Test
+  # ==========================================
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build and Test
+        run: ./gradlew clean build test --no-daemon
+        env:
+          SPRING_PROFILES_ACTIVE: test
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            build/test-results/test/
+            build/reports/tests/test/
+          retention-days: 7
+
+      - name: Generate Coverage Report
+        run: ./gradlew jacocoTestReport --no-daemon
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/reports/jacoco/test/
+          retention-days: 7
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-service-jar
+          path: build/libs/*.jar
+          retention-days: 1
+
+  # ==========================================
+  # Job 2: Code Quality (SonarCloud)
+  # ==========================================
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SPRING_PROFILES_ACTIVE: test
+        run: ./gradlew build jacocoTestReport sonar --info --no-daemon
+        continue-on-error: true
+
+  # ==========================================
+  # Job 3: Docker Build
+  # ==========================================
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: booking-service-jar
+          path: build/libs/
+
+      - name: Verify JAR file
+        run: |
+          echo "Contents of build/libs/:"
+          ls -lh build/libs/
+          if [ ! -f build/libs/*.jar ]; then
+            echo "ERROR: JAR file not found!"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build -t booking-service:test .
+
+      - name: Test Docker image
+        run: |
+          echo "Testing Docker image..."
+          docker images | grep booking-service
+
+      - name: Save Docker image
+        if: github.ref == 'refs/heads/main'
+        run: docker save booking-service:test | gzip > booking-service-image.tar.gz
+
+      - name: Upload Docker image artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-service-image
+          path: booking-service-image.tar.gz
+          retention-days: 1
+
+  # ==========================================
+  # Job 4: K6 Performance Tests
+  # ==========================================
+  performance-tests:
+    name: K6 Performance Tests
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: booking-service-image
+
+      - name: Load Docker image
+        run: docker load < booking-service-image.tar.gz
+
+      - name: Create Docker network
+        run: docker network create shared-microservices-network || true
+
+      - name: Start MongoDB
+        run: |
+          docker run -d --name booking-mongodb \
+            --network shared-microservices-network \
+            -p 27018:27017 \
+            -e MONGO_INITDB_DATABASE=booking-service \
+            mongo:7.0
+
+      - name: Wait for MongoDB
+        run: |
+          echo "⏳ Waiting for MongoDB to start..."
+          timeout 120 bash -c 'until docker exec booking-mongodb mongosh --eval "db.runCommand({ping:1})" --quiet > /dev/null 2>&1; do echo "Waiting..."; sleep 3; done'
+          echo "✅ MongoDB is ready!"
+          sleep 5
+
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak \
+            --network shared-microservices-network \
+            -p 8090:8080 \
+            -e KEYCLOAK_ADMIN=admin \
+            -e KEYCLOAK_ADMIN_PASSWORD=admin123 \
+            -e KC_HTTP_PORT=8080 \
+            -e KC_HOSTNAME_STRICT=false \
+            -e KC_HTTP_ENABLED=true \
+            quay.io/keycloak/keycloak:23.0 start-dev
+
+      - name: Wait for Keycloak
+        run: |
+          echo "⏳ Waiting for Keycloak to start..."
+          timeout 180 bash -c 'until curl -s http://localhost:8090/realms/master/.well-known/openid-configuration > /dev/null; do echo "Waiting..."; sleep 5; done'
+          echo "✅ Keycloak is ready!"
+          sleep 10
+
+      - name: Configure Keycloak
+        run: |
+          echo "🔧 Configuring Keycloak..."
+          
+          # Get admin token
+          ADMIN_TOKEN=$(curl -s -X POST http://localhost:8090/realms/master/protocol/openid-connect/token \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=admin&password=admin123&grant_type=password&client_id=admin-cli" | jq -r '.access_token')
+          
+          if [ "$ADMIN_TOKEN" == "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+            echo "❌ Failed to get admin token"
+            exit 1
+          fi
+          
+          echo "✅ Got admin token"
+          
+          # Create realm
+          echo "Creating realm..."
+          curl -s -X POST http://localhost:8090/admin/realms \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"realm":"friendly-housing","enabled":true,"sslRequired":"none"}' || echo "Realm might already exist"
+          
+          # Create booking-service client
+          echo "Creating booking-service client..."
+          curl -s -X POST http://localhost:8090/admin/realms/friendly-housing/clients \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "clientId":"booking-service",
+              "enabled":true,
+              "clientAuthenticatorType":"client-secret",
+              "secret":"Lrf6ZwUcAqOnvg4fl89kKyiOLCaWDb6B",
+              "directAccessGrantsEnabled":true,
+              "publicClient":false,
+              "redirectUris":["*"],
+              "serviceAccountsEnabled":true
+            }' || echo "Client might already exist"
+          
+          # Create test users (student and landlord)
+          echo "Creating test users..."
+          curl -s -X POST http://localhost:8090/admin/realms/friendly-housing/users \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "username":"test-student",
+              "email":"student@test.com",
+              "enabled":true,
+              "credentials":[{"type":"password","value":"password123","temporary":false}]
+            }' || echo "Student user might already exist"
+          
+          curl -s -X POST http://localhost:8090/admin/realms/friendly-housing/users \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "username":"test-landlord",
+              "email":"landlord@test.com",
+              "enabled":true,
+              "credentials":[{"type":"password","value":"password123","temporary":false}]
+            }' || echo "Landlord user might already exist"
+          
+          echo "✅ Keycloak configuration complete"
+
+      - name: Start Mock Services
+        run: |
+          # Mock User Service
+          docker run -d --name user-service-app \
+            --network shared-microservices-network \
+            -p 8081:5678 \
+            hashicorp/http-echo:latest -text='{"id":"1","name":"Test User","email":"user@test.com"}' -listen=:5678
+          
+          # Mock Property Service
+          docker run -d --name property-service-app \
+            --network shared-microservices-network \
+            -p 8082:5678 \
+            hashicorp/http-echo:latest -text='{"id":"1","title":"Test Property","landlordId":"1"}' -listen=:5678
+          
+          # Mock Appointment Service
+          docker run -d --name appointment-service-app \
+            --network shared-microservices-network \
+            -p 8083:5678 \
+            hashicorp/http-echo:latest -text='{"id":"test-appointment-id","propertyId":"1","status":"CONFIRMED"}' -listen=:5678
+
+      - name: Start Booking Service
+        run: |
+          docker run -d --name booking-service-app \
+            --network shared-microservices-network \
+            -p 8084:8084 \
+            -e SPRING_PROFILES_ACTIVE=default \
+            -e SPRING_DATA_MONGODB_URI=mongodb://booking-mongodb:27017/booking-service \
+            -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://keycloak:8080/realms/friendly-housing \
+            -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs \
+            -e KEYCLOAK_AUTH_SERVER_URL=http://keycloak:8080 \
+            -e KEYCLOAK_REALM=friendly-housing \
+            -e KEYCLOAK_RESOURCE=booking-service \
+            -e KEYCLOAK_CREDENTIALS_SECRET=Lrf6ZwUcAqOnvg4fl89kKyiOLCaWDb6B \
+            -e MICROSERVICES_APPOINTMENT_SERVICE_URL=http://appointment-service-app:5678 \
+            -e MICROSERVICES_PROPERTY_SERVICE_URL=http://property-service-app:5678 \
+            -e MICROSERVICES_USER_SERVICE_URL=http://user-service-app:5678 \
+            booking-service:test
+
+      - name: Wait for Booking Service
+        run: |
+          echo "⏳ Waiting for Booking Service to start..."
+          timeout 180 bash -c 'until curl -s http://localhost:8084/actuator/health | grep -q "UP"; do echo "Waiting..."; sleep 5; done'
+          echo "✅ Booking Service is ready!"
+          sleep 5
+
+      - name: Install K6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
+            sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run K6 Performance Tests
+        run: |
+          # Run the existing K6 tests
+          if [ -f "tests/04-booking-service.test.js" ]; then
+            k6 run tests/04-booking-service.test.js
+          else
+            echo "⚠️ K6 test file not found, running basic health check instead"
+            cat > booking-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate } from 'k6/metrics';
+
+          const errorRate = new Rate('errors');
+          const BASE_URL = 'http://localhost:8084';
+
+          export const options = {
+            stages: [
+              { duration: '30s', target: 10 },
+              { duration: '1m', target: 10 },
+              { duration: '30s', target: 0 },
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<2000'],
+              errors: ['rate<0.1'],
+            },
+          };
+
+          export default function () {
+            // Health check
+            let healthRes = http.get(`${BASE_URL}/actuator/health`);
+            check(healthRes, {
+              'health check is 200': (r) => r.status === 200,
+              'health check is UP': (r) => r.body.includes('UP'),
+            }) || errorRate.add(1);
+
+            sleep(1);
+
+            // Get bookings endpoint (will fail auth but tests service is responding)
+            let bookingsRes = http.get(`${BASE_URL}/api/v1/bookings/requester/1`);
+            check(bookingsRes, {
+              'bookings endpoint responds': (r) => r.status !== 0,
+            });
+
+            sleep(2);
+          }
+          EOF
+            k6 run booking-test.js
+          fi
+        env:
+          GATEWAY_URL: http://localhost:8084
+          KEYCLOAK_URL: http://localhost:8090
+        continue-on-error: true
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "🔍 Booking Service logs:"
+          docker logs booking-service-app || echo "Service container not found"
+          echo ""
+          echo "🔍 MongoDB logs:"
+          docker logs booking-mongodb || echo "MongoDB container not found"
+          echo ""
+          echo "🔍 Keycloak logs:"
+          docker logs keycloak || echo "Keycloak container not found"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop booking-service-app booking-mongodb keycloak user-service-app property-service-app appointment-service-app || true
+          docker rm booking-service-app booking-mongodb keycloak user-service-app property-service-app appointment-service-app || true
+          docker network rm shared-microservices-network || true
+
+  # ==========================================
+  # Job 5: Push to Docker Hub
+  # ==========================================
+  docker-push:
+    name: Push to Docker Hub
+    runs-on: ubuntu-latest
+    needs: [docker-build, performance-tests]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: booking-service-jar
+          path: build/libs/
+
+      - name: Verify JAR file
+        run: |
+          echo "Contents of build/libs/:"
+          ls -lh build/libs/
+          if [ ! -f build/libs/*.jar ]; then
+            echo "ERROR: JAR file not found!"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image Summary
+        run: |
+          echo "### Docker Image Published 🐳" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ env.DOCKER_IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.DOCKER_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup
+        if: always()
+        run: docker logout
