@@ -371,16 +371,16 @@ jobs:
           for i in {1..36}; do
             if docker ps | grep -q booking-service-app; then
               echo "✅ Container is running (attempt $i/36)"
-          
+              
               # Try health check - accept 200, 401, or 503 (401 = secured but running, 503 = starting)
               HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8084/actuator/health 2>/dev/null || echo "000")
-          
+              
               if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
                 echo "✅ Booking Service is ready! (HTTP $HTTP_CODE)"
                 sleep 5
                 exit 0
               fi
-          
+              
               # Show status
               if [ "$HTTP_CODE" != "000" ]; then
                 echo "Service responding with HTTP $HTTP_CODE, waiting for 200 or 401..."
@@ -392,7 +392,7 @@ jobs:
               docker logs booking-service-app 2>&1 | tail -50
               exit 1
             fi
-          
+            
             echo "Waiting... (attempt $i/36 - ${i}0s elapsed)"
             sleep 5
           done
