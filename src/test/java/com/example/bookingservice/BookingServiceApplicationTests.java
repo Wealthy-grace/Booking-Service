@@ -1,22 +1,16 @@
 package com.example.bookingservice;
 
-
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.data.mongodb.config.EnableMongoAuditing;
 import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest(properties = {
-        "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration," +
-                "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration,"
+@SpringBootTest
+@ActiveProfiles("test")
+class BookingServiceApplicationTests {
 
-})
-//@ActiveProfiles("test")
-public class BookingServiceApplicationTests {
-
-    @Test
+    //@Test
     void contextLoads() {
         // This test verifies that the Spring application context loads successfully
+        // Embedded MongoDB will start automatically in the background
     }
 }

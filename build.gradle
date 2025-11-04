@@ -121,12 +121,8 @@ dependencies {
     // =======================
     // 🧾 DATABASE (MongoDB)
     // =======================
-    implementation('org.springframework.boot:spring-boot-starter-data-mongodb') {
-        // Exclude embedded Mongo for performance and clarity
-        exclude group: 'de.flapdoodle.embed', module: 'de.flapdoodle.embed.mongo'
-        exclude group: 'de.flapdoodle.embed', module: 'de.flapdoodle.embed.mongo.spring30x'
-        exclude group: 'de.flapdoodle.embed', module: 'de.flapdoodle.embed.mongo.spring'
-    }
+    // REMOVED the excludes to allow embedded MongoDB for tests
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
     // =======================
     // 🧭 OPENAPI / SWAGGER
@@ -163,13 +159,18 @@ dependencies {
     // 🧪 TESTING
     // =======================
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'org.springframework.amqp:spring-rabbit-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Embedded MongoDB for unit tests (works without Docker)
+    testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo:4.11.0'
+
+    // Testcontainers (only used in integration tests that run in CI/CD with Docker)
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:junit-jupiter'
     testImplementation 'org.testcontainers:mongodb'
     testImplementation 'org.testcontainers:rabbitmq'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 dependencyManagement {
