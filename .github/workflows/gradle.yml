@@ -310,6 +310,9 @@ jobs:
             --network shared-microservices-network \
             -p 8083:5678 \
             hashicorp/http-echo:latest -text='{"id":"test-appointment-id","propertyId":"1","status":"CONFIRMED"}' -listen=:5678
+          
+          echo "✅ Mock services started"
+          sleep 2
 
       - name: Start Booking Service
         run: |
@@ -327,14 +330,75 @@ jobs:
             -e MICROSERVICES_APPOINTMENT_SERVICE_URL=http://appointment-service-app:5678 \
             -e MICROSERVICES_PROPERTY_SERVICE_URL=http://property-service-app:5678 \
             -e MICROSERVICES_USER_SERVICE_URL=http://user-service-app:5678 \
+            -e LOGGING_LEVEL_ROOT=INFO \
+            -e LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=INFO \
             booking-service:test
+          
+          echo "✅ Booking Service container started"
+          sleep 5
 
       - name: Wait for Booking Service
         run: |
           echo "⏳ Waiting for Booking Service to start..."
-          timeout 180 bash -c 'until curl -s http://localhost:8084/actuator/health | grep -q "UP"; do echo "Waiting..."; sleep 5; done'
-          echo "✅ Booking Service is ready!"
-          sleep 5
+          
+          # Check if container is running
+          for i in {1..36}; do
+            if docker ps | grep -q booking-service-app; then
+              echo "✅ Container is running (attempt $i/36)"
+          
+              # Try health check
+              if curl -s http://localhost:8084/actuator/health 2>/dev/null | grep -q "UP"; then
+                echo "✅ Booking Service is ready!"
+                sleep 5
+                exit 0
+              fi
+          
+              # Also check if service is responding at all
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8084/actuator/health 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" != "000" ]; then
+                echo "Service responding with HTTP $HTTP_CODE, but not UP yet..."
+              else
+                echo "Service not responding yet..."
+              fi
+            else
+              echo "❌ Container not running! Checking logs..."
+              docker logs booking-service-app 2>&1 | tail -50
+              exit 1
+            fi
+          
+            echo "Waiting... (attempt $i/36 - ${i}0s elapsed)"
+            sleep 5
+          done
+          
+          echo "❌ Timeout waiting for service. Showing recent logs:"
+          docker logs booking-service-app 2>&1 | tail -100
+          
+          echo ""
+          echo "🔍 Container status:"
+          docker ps -a | grep booking-service-app || echo "Container not found"
+          
+          echo ""
+          echo "🔍 Network connectivity test:"
+          docker exec booking-service-app ping -c 2 booking-mongodb || echo "Cannot ping MongoDB"
+          docker exec booking-service-app ping -c 2 keycloak || echo "Cannot ping Keycloak"
+          
+          exit 1
+
+      - name: Verify Service Endpoints
+        run: |
+          echo "🔍 Testing service endpoints..."
+          
+          # Check actuator health
+          echo "Health endpoint:"
+          curl -s http://localhost:8084/actuator/health | jq . || echo "Failed to get health"
+          
+          # Check if service is accessible
+          echo ""
+          echo "Testing booking endpoint (should return 401/403 without auth):"
+          curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:8084/api/v1/bookings/requester/1
+          
+          echo ""
+          echo "✅ Endpoint verification complete"
 
       - name: Install K6
         run: |
