@@ -1,81 +1,99 @@
 package com.example.bookingservice.producer;
 
-
 import com.example.bookingservice.configuration.RabbitMQConfig;
-import com.example.bookingservice.event.AppointmentEvent;
+import com.example.bookingservice.event.BookingEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.UUID;
+
 /**
- * Producer for sending appointment events to RabbitMQ
+ * Producer for sending booking events to RabbitMQ
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class BookingEventProduce {
+public class BookingEventProducer {
 
     private final RabbitTemplate rabbitTemplate;
 
     /**
-     * Publishes appointment event to the exchange
+     * Publishes booking event to the exchange
      */
-    public void publishAppointmentEvent(AppointmentEvent event) {
+    public void publishBookingEvent(BookingEvent event) {
         try {
-            log.info("Publishing appointment event: {} for appointment ID: {}",
-                    event.getEventType(), event.getAppointmentId());
+            // Set event metadata if not already set
+            if (event.getEventId() == null) {
+                event.setEventId(UUID.randomUUID().toString());
+            }
+            if (event.getEventTimestamp() == null) {
+                event.setEventTimestamp(LocalDateTime.now());
+            }
+
+            log.info("Publishing booking event: {} for booking ID: {}",
+                    event.getEventType(), event.getBookingId());
 
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.EXCHANGE_NAME,
-                    RabbitMQConfig.APPOINTMENT_ROUTING_KEY,
+                    RabbitMQConfig.BOOKING_ROUTING_KEY,
                     event
             );
 
-            log.info("Successfully published appointment event: {}", event.getEventType());
+            log.info("Successfully published booking event: {}", event.getEventType());
         } catch (Exception e) {
-            log.error("Failed to publish appointment event: {}", e.getMessage(), e);
+            log.error("Failed to publish booking event: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to publish event to RabbitMQ", e);
         }
     }
 
     /**
-     * Convenience method for appointment creation events
+     * Convenience method for booking creation events
      */
-    public void publishAppointmentCreated(AppointmentEvent event) {
-        event.setEventType("APPOINTMENT_CREATED");
-        publishAppointmentEvent(event);
+    public void publishBookingCreated(BookingEvent event) {
+        event.setEventType("BOOKING_CREATED");
+        publishBookingEvent(event);
     }
 
     /**
-     * Convenience method for appointment confirmation events
+     * Convenience method for booking confirmation events
      */
-    public void publishAppointmentConfirmed(AppointmentEvent event) {
-        event.setEventType("APPOINTMENT_CONFIRMED");
-        publishAppointmentEvent(event);
+    public void publishBookingConfirmed(BookingEvent event) {
+        event.setEventType("BOOKING_CONFIRMED");
+        publishBookingEvent(event);
     }
 
     /**
-     * Convenience method for appointment cancellation events
+     * Convenience method for booking cancellation events
      */
-    public void publishAppointmentCancelled(AppointmentEvent event) {
-        event.setEventType("APPOINTMENT_CANCELLED");
-        publishAppointmentEvent(event);
+    public void publishBookingCancelled(BookingEvent event) {
+        event.setEventType("BOOKING_CANCELLED");
+        publishBookingEvent(event);
     }
 
     /**
-     * Convenience method for appointment rescheduled events
+     * Convenience method for booking payment completed events
      */
-    public void publishAppointmentRescheduled(AppointmentEvent event) {
-        event.setEventType("APPOINTMENT_RESCHEDULED");
-        publishAppointmentEvent(event);
+    public void publishBookingPaymentCompleted(BookingEvent event) {
+        event.setEventType("BOOKING_PAYMENT_COMPLETED");
+        publishBookingEvent(event);
     }
 
     /**
-     * Convenience method for appointment completed events
+     * Convenience method for booking expired events
      */
-    public void publishAppointmentCompleted(AppointmentEvent event) {
-        event.setEventType("APPOINTMENT_COMPLETED");
-        publishAppointmentEvent(event);
+    public void publishBookingExpired(BookingEvent event) {
+        event.setEventType("BOOKING_EXPIRED");
+        publishBookingEvent(event);
+    }
+
+    /**
+     * Convenience method for booking completed events
+     */
+    public void publishBookingCompleted(BookingEvent event) {
+        event.setEventType("BOOKING_COMPLETED");
+        publishBookingEvent(event);
     }
 }

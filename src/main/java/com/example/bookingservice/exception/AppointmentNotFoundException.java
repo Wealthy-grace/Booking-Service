@@ -1,2 +1,8 @@
-package com.example.bookingservice.exception;public class AppointmentNotFoundException {
+package com.example.bookingservice.exception;
+
+public class AppointmentNotFoundException extends RuntimeException {
+
+    public AppointmentNotFoundException(String message) {
+        super(message);
+    }
 }

@@ -1,4 +1,4 @@
-package com.example.appointmentservice.configuration;
+package com.example.bookingservice.configuration;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
@@ -33,7 +33,7 @@ public class MongoConfig {
     @Bean
     @ConditionalOnMissingBean
     public MongoDatabaseFactory mongoDatabaseFactory(MongoClient mongoClient) {
-        return new SimpleMongoClientDatabaseFactory(mongoClient, "appointment-service");
+        return new SimpleMongoClientDatabaseFactory(mongoClient, "booking-service");
     }
 
     @Bean

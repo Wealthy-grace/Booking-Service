@@ -1,2 +1,11 @@
-package com.example.bookingservice.persistence.model;public class AppointmentStatus {
+package com.example.bookingservice.persistence.model;
+
+
+public enum AppointmentStatus {
+    PENDING,
+    CONFIRMED,
+    CANCELLED,
+    COMPLETED,
+    NO_SHOW,
+    RESCHEDULED
 }

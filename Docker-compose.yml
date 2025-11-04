@@ -1,0 +1,367 @@
+#version: '3.8'
+#
+#services:
+#  # =========================================================
+#  # MongoDB Database
+#  # =========================================================
+#  mongodb:
+#    image: mongo:7.0
+#    container_name: booking-service-mongodb
+#    environment:
+#      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+#    ports:
+#      - "${MONGO_PORT}:27017"
+#    volumes:
+#      - booking_mongodb_data:/data/db
+#      - booking_mongodb_config:/data/configdb
+#    networks:
+#      - shared-microservices-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "mongosh --eval 'db.runCommand(\"ping\").ok' --quiet"]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
+#      start_period: 60s
+#    restart: unless-stopped
+#
+#  # =========================================================
+#  # PostgreSQL Database for Keycloak
+#  # =========================================================
+#  postgres:
+#    image: postgres:16-alpine
+#    container_name: booking-keycloak-postgres
+#    environment:
+#      POSTGRES_DB: ${KEYCLOAK_DB_NAME}
+#      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+#      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+#    ports:
+#      - "${POSTGRES_PORT}:5432"
+#    volumes:
+#      - booking_postgres_data:/var/lib/postgresql/data
+#    networks:
+#      - shared-microservices-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER}"]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
+#      start_period: 60s
+#    restart: unless-stopped
+#
+#  # =========================================================
+#  # Keycloak Authentication Server
+#  # =========================================================
+#  keycloak:
+#    image: quay.io/keycloak/keycloak:23.0
+#    container_name: booking-keycloak-server
+#    command: start-dev
+#    environment:
+#      KC_DB: postgres
+#      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB_NAME}
+#      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+#      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+#      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
+#      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+#      KC_HEALTH_ENABLED: true
+#      KC_METRICS_ENABLED: true
+#      KC_HTTP_PORT: 8080
+#    ports:
+#      - "${KEYCLOAK_PORT}:8080"
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+#    networks:
+#      - shared-microservices-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+#      interval: 60s
+#      timeout: 30s
+#      retries: 5
+#      start_period: 180s
+#    restart: unless-stopped
+#
+#  # =========================================================
+#  # RabbitMQ Message Broker
+#  # =========================================================
+#  rabbitmq:
+#    image: rabbitmq:3.13-management-alpine
+#    container_name: booking-rabbitmq
+#    environment:
+#      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+#      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+#    ports:
+#      - "${RABBITMQ_PORT}:5672"
+#      - "${RABBITMQ_MANAGEMENT_PORT}:15672"
+#    volumes:
+#      - booking_rabbitmq_data:/var/lib/rabbitmq
+#    networks:
+#      - shared-microservices-network
+#    healthcheck:
+#      test: rabbitmq-diagnostics -q ping
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
+#      start_period: 60s
+#    restart: unless-stopped
+
+  # =========================================================
+  # User Service (Optional - if running in Docker)
+  # =========================================================
+  # user-service:
+  #   build:
+  #     context: ../user-service
+  #     dockerfile: Dockerfile
+  #   container_name: user-service
+  #   environment:
+  #     SPRING_PROFILES_ACTIVE: docker
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "${USER_SERVICE_PORT}:8081"
+  #   depends_on:
+  #     mongodb:
+  #       condition: service_healthy
+  #     keycloak:
+  #       condition: service_healthy
+  #   networks:
+  #     - microservices-network
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # =========================================================
+  # Property Service (Optional - if running in Docker)
+  # =========================================================
+  # property-service:
+  #   build:
+  #     context: ../property-service
+  #     dockerfile: Dockerfile
+  #   container_name: property-service
+  #   environment:
+  #     SPRING_PROFILES_ACTIVE: docker
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "${PROPERTY_SERVICE_PORT}:8082"
+  #   depends_on:
+  #     mongodb:
+  #       condition: service_healthy
+  #     keycloak:
+  #       condition: service_healthy
+  #   networks:
+  #     - microservices-network
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # =========================================================
+  # Appointment Service (Optional - if running in Docker)
+  # =========================================================
+  # appointment-service:
+  #   build:
+  #     context: ../appointment-service
+  #     dockerfile: Dockerfile
+  #   container_name: appointment-service
+  #   environment:
+  #     SPRING_PROFILES_ACTIVE: docker
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "${APPOINTMENT_SERVICE_PORT}:8083"
+  #   depends_on:
+  #     mongodb:
+  #       condition: service_healthy
+  #     keycloak:
+  #       condition: service_healthy
+  #   networks:
+  #     - microservices-network
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # New Updated Docker Compose File
+
+services:
+  # ==================== BOOKING SERVICE ====================
+
+  # MongoDB Database for Booking Service
+  booking-mongodb:
+    image: mongo:7.0
+    container_name: booking-service-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: booking-service
+    ports:
+      - "27018:27017"
+    volumes:
+      - booking_mongodb_data:/data/db
+      - booking_mongodb_config:/data/configdb
+    networks:
+      - shared-microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.runCommand(\"ping\").ok' --quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Booking Service SonarQube PostgreSQL
+  booking-sonarqube-postgres:
+    image: postgres:15-alpine
+    container_name: booking-sonarqube-postgres
+    environment:
+      POSTGRES_DB: booking_sonarqube
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar123
+    ports:
+      - "5435:5432"
+    volumes:
+      - booking_sonarqube_postgres_data:/var/lib/postgresql/data
+    networks:
+      - shared-microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d booking_sonarqube"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Booking Service SonarQube Server
+  booking-sonarqube:
+    image: sonarqube:10.7.0-community
+    container_name: booking-sonarqube-server
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://booking-sonarqube-postgres:5432/booking_sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar123
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
+      SONAR_WEB_JAVAADDITIONALOPTS: "-Xmx512m -Xms128m"
+      SONAR_CE_JAVAADDITIONALOPTS: "-Xmx512m -Xms128m"
+    ports:
+      - "9003:9000"
+    volumes:
+      - booking_sonarqube_data:/opt/sonarqube/data
+      - booking_sonarqube_extensions:/opt/sonarqube/extensions
+      - booking_sonarqube_logs:/opt/sonarqube/logs
+    depends_on:
+      booking-sonarqube-postgres:
+        condition: service_healthy
+    networks:
+      - shared-microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 180s
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # Booking Service Application
+  booking-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: godfrey10/booking-service:latest
+    container_name: booking-service-app
+    environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: default
+
+      # MongoDB Configuration
+      SPRING_DATA_MONGODB_URI: mongodb://booking-mongodb:27017/booking-service
+      SPRING_DATA_MONGODB_AUTO_INDEX_CREATION: true
+
+      # Application Configuration
+      SPRING_APPLICATION_NAME: Booking-Service
+      SERVER_PORT: 8084
+      SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING: true
+
+      # Keycloak OAuth2 Configuration - Use localhost:8090 for token validation on host, keycloak:8080 on docker network
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8090/realms/friendly-housing
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs
+
+      # Keycloak Admin Client Configuration - Use keycloak:8080 for internal Docker communication
+      KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: friendly-housing
+      KEYCLOAK_RESOURCE: booking-service
+      KEYCLOAK_CREDENTIALS_SECRET: Lrf6ZwUcAqOnvg4fl89kKyiOLCaWDb6B
+
+      # Service URLs - Inter-service communication (USE CONTAINER NAMES)
+      MICROSERVICES_APPOINTMENT_SERVICE_URL: http://appointment-service-app:8083
+      MICROSERVICES_PROPERTY_SERVICE_URL: http://property-service-app:8082
+      MICROSERVICES_USER_SERVICE_URL: http://user-service-app:8081
+
+      # Feign Client Timeout Configuration (in milliseconds)
+      FEIGN_CLIENT_CONFIG_DEFAULT_CONNECTTIMEOUT: 10000
+      FEIGN_CLIENT_CONFIG_DEFAULT_READTIMEOUT: 30000
+      FEIGN_CLIENT_CONFIG_DEFAULT_LOGGERLEVEL: FULL
+
+      # Actuator/Monitoring Configuration
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,metrics,prometheus,info,circuitbreakers
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
+      MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED: true
+      MANAGEMENT_HEALTH_CIRCUITBREAKERS_ENABLED: true
+      MANAGEMENT_ENDPOINTS_ENABLED_BY_DEFAULT: true
+
+      # Logging Configuration
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_EXAMPLE_BOOKINGSERVICE: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_DATA_MONGODB_CORE_MONGOTEMPLATE: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_DATA_MONGODB: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY_OAUTH2: DEBUG
+      LOGGING_PATTERN_CONSOLE: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+      # Spring Cloud Configuration
+      SPRING_CLOUD_COMPATIBILITY_VERIFIER_ENABLED: false
+
+    ports:
+      - "8084:8084"
+    depends_on:
+      booking-mongodb:
+        condition: service_healthy
+    networks:
+      - shared-microservices-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  # Booking Service volumes
+  booking_mongodb_data:
+    driver: local
+  booking_mongodb_config:
+    driver: local
+  booking_sonarqube_postgres_data:
+    driver: local
+  booking_sonarqube_data:
+    driver: local
+  booking_sonarqube_extensions:
+    driver: local
+  booking_sonarqube_logs:
+    driver: local
+
+networks:
+  shared-microservices-network:
+    external: true

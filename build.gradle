@@ -1,7 +1,9 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.5.6'
+    id 'org.springframework.boot' version '3.3.5'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'jacoco'
+    id 'org.sonarqube' version '7.0.1.6134'
 }
 
 group = 'com.example'
@@ -14,24 +16,164 @@ java {
     }
 }
 
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
 repositories {
     mavenCentral()
 }
 
+ext {
+    set('springCloudVersion', "2023.0.3")
+}
+
+// ==========================================
+// JACOCO CONFIGURATION
+// ==========================================
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+        showExceptions true
+        showCauses true
+        showStackTraces true
+        showStandardStreams = false
+    }
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                    '**/config/**',
+                    '**/dto/**',
+                    '**/entity/**',
+                    '**/model/**',
+                    '**/exception/**'
+            ])
+        }))
+    }
+}
+
+// ==========================================
+// SONARQUBE CONFIGURATION
+// ==========================================
+sonar {
+    properties {
+        property "sonar.projectKey", "Wealthy-grace_Booking-Service"
+        property "sonar.organization", "wealthy-grace"
+        property "sonar.host.url", "https://sonarcloud.io"
+
+        // Coverage settings
+        property "sonar.coverage.jacoco.xmlReportPaths", "${project.buildDir}/reports/jacoco/test/jacocoTestReport.xml"
+        property "sonar.java.coveragePlugin", "jacoco"
+
+        // Source and test directories
+        property "sonar.sources", "src/main/java"
+        property "sonar.tests", "src/test/java"
+
+        // Exclude patterns
+        property "sonar.exclusions", "**/config/**,**/dto/**,**/entity/**,**/model/**,**/exception/**"
+        property "sonar.test.exclusions", "**/test/**"
+
+        // Java version
+        property "sonar.java.source", "17"
+        property "sonar.java.target", "17"
+    }
+}
+
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+    // =======================
+    // 🌐 SPRING BOOT STARTERS
+    // =======================
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // 🔐 Security and OAuth2
+    implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Spring Boot AMQP starter for RabbitMQ support
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
+    // Spring Boot WebFlux (includes new RestClient)
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+    // =======================
+    // 🧾 DATABASE (MongoDB)
+    // =======================
+    implementation('org.springframework.boot:spring-boot-starter-data-mongodb') {
+        // Exclude embedded Mongo for performance and clarity
+        exclude group: 'de.flapdoodle.embed', module: 'de.flapdoodle.embed.mongo'
+        exclude group: 'de.flapdoodle.embed', module: 'de.flapdoodle.embed.mongo.spring30x'
+        exclude group: 'de.flapdoodle.embed', module: 'de.flapdoodle.embed.mongo.spring'
+    }
+
+    // =======================
+    // 🧭 OPENAPI / SWAGGER
+    // =======================
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
+    // =======================
+    // 🧩 MAPSTRUCT (Object Mapper)
+    // =======================
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+
+    // =======================
+    // 🧱 LOMBOK (Boilerplate reduction)
+    // =======================
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+
+    // =======================
+    // 🛡️ RESILIENCE4J
+    // =======================
+    implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
+
+    // =======================
+    // 📊 MONITORING & METRICS
+    // =======================
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    // =======================
+    // 🧪 TESTING
+    // =======================
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework.amqp:spring-rabbit-test'
     testImplementation 'org.testcontainers:junit-jupiter'
     testImplementation 'org.testcontainers:mongodb'
+    testImplementation 'org.testcontainers:rabbitmq'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
-    useJUnitPlatform()
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
 }
