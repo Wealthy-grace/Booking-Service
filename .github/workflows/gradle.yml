@@ -323,6 +323,11 @@ jobs:
             -e SPRING_DATA_MONGODB_URI=mongodb://booking-mongodb:27017/booking-service \
             -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://keycloak:8080/realms/friendly-housing \
             -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs \
+            -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/friendly-housing \
+            -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID=booking-service \
+            -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET=Lrf6ZwUcAqOnvg4fl89kKyiOLCaWDb6B \
+            -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_AUTHORIZATION_GRANT_TYPE=client_credentials \
+            -e SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE=openid \
             -e KEYCLOAK_AUTH_SERVER_URL=http://keycloak:8080 \
             -e KEYCLOAK_REALM=friendly-housing \
             -e KEYCLOAK_RESOURCE=booking-service \
@@ -332,6 +337,7 @@ jobs:
             -e MICROSERVICES_USER_SERVICE_URL=http://user-service-app:5678 \
             -e LOGGING_LEVEL_ROOT=INFO \
             -e LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=INFO \
+            -e LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=DEBUG \
             booking-service:test
           
           echo "✅ Booking Service container started"
