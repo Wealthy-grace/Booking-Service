@@ -321,6 +321,7 @@ jobs:
             -p 8084:8084 \
             -e SPRING_PROFILES_ACTIVE=default \
             -e SPRING_DATA_MONGODB_URI=mongodb://booking-mongodb:27017/booking-service \
+            -e SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration \
             -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://keycloak:8080/realms/friendly-housing \
             -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs \
             -e SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/friendly-housing \
@@ -337,7 +338,6 @@ jobs:
             -e MICROSERVICES_USER_SERVICE_URL=http://user-service-app:5678 \
             -e LOGGING_LEVEL_ROOT=INFO \
             -e LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=INFO \
-            -e LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=DEBUG \
             booking-service:test
           
           echo "✅ Booking Service container started"
