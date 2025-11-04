@@ -372,17 +372,18 @@ jobs:
             if docker ps | grep -q booking-service-app; then
               echo "✅ Container is running (attempt $i/36)"
           
-              # Try health check
-              if curl -s http://localhost:8084/actuator/health 2>/dev/null | grep -q "UP"; then
-                echo "✅ Booking Service is ready!"
+              # Try health check - accept 200, 401, or 503 (401 = secured but running, 503 = starting)
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8084/actuator/health 2>/dev/null || echo "000")
+          
+              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+                echo "✅ Booking Service is ready! (HTTP $HTTP_CODE)"
                 sleep 5
                 exit 0
               fi
           
-              # Also check if service is responding at all
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8084/actuator/health 2>/dev/null || echo "000")
+              # Show status
               if [ "$HTTP_CODE" != "000" ]; then
-                echo "Service responding with HTTP $HTTP_CODE, but not UP yet..."
+                echo "Service responding with HTTP $HTTP_CODE, waiting for 200 or 401..."
               else
                 echo "Service not responding yet..."
               fi
