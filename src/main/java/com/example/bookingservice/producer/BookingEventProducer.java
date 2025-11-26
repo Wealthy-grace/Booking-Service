@@ -5,6 +5,8 @@ import com.example.bookingservice.event.BookingEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -16,6 +18,11 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(
+        name = "spring.rabbitmq.enabled",
+        havingValue = "true",
+        matchIfMissing = false
+)
 public class BookingEventProducer {
 
     private final RabbitTemplate rabbitTemplate;

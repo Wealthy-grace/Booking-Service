@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: Booking-Service
+
+  # MongoDB Configuration
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27018/booking-service}
+      auto-index-creation: true
+
+  # RabbitMQ Configuration
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
+  # Security OAuth2 Configuration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8090/realms/friendly-housing}
+          jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs}
+
+      client:
+        registration:
+          keycloak:
+            client-id: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID:booking-service}
+            client-secret: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET:Lrf6ZwUcAqOnvg4fl89kKyiOLCaWDb6B}
+            authorization-grant-type: client_credentials
+            scope: openid,profile,email
+
+        provider:
+          keycloak:
+            issuer-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI:http://keycloak:8080/realms/friendly-housing}
+            token-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_TOKEN_URI:http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/token}
+
+# ✅ THIS IS THE KEY CONFIGURATION - matches docker-compose.yml
+microservices:
+  appointment-service:
+    url: ${MICROSERVICES_APPOINTMENT_SERVICE_URL:http://localhost:8083}
+  property-service:
+    url: ${MICROSERVICES_PROPERTY_SERVICE_URL:http://localhost:8082}
+  user-service:
+    url: ${MICROSERVICES_USER_SERVICE_URL:http://localhost:8081}
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8084}
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.example.bookingservice: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.web.client: DEBUG
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,info
+  endpoint:
+    health:
+      show-details: always

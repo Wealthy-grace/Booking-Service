@@ -1,143 +1,3 @@
-//package com.example.bookingservice.configuration;
-//
-//import lombok.RequiredArgsConstructor;
-//import org.springframework.context.annotation.Bean;
-//import org.springframework.context.annotation.Configuration;
-//import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-//import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-//import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-//import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-//import org.springframework.security.config.http.SessionCreationPolicy;
-//import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-//import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
-//import org.springframework.security.web.SecurityFilterChain;
-//import org.springframework.web.cors.CorsConfiguration;
-//import org.springframework.web.cors.CorsConfigurationSource;
-//import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-//
-//import java.util.Arrays;
-//import java.util.List;
-//
-//@Configuration
-//@EnableWebSecurity
-//@EnableMethodSecurity
-//@RequiredArgsConstructor
-//public class SecurityConfig {
-//
-//    @Bean
-//    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-//        http
-//                .csrf(AbstractHttpConfigurer::disable)
-//                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-//                .authorizeHttpRequests(auth -> auth
-//                        // Public endpoints
-//                        .requestMatchers(
-//                                "/api-docs/**",
-//                                "/swagger-ui/**",
-//                                "/swagger-ui.html",
-//                                "/v3/api-docs/**",
-//                                "/api/bookings/confirm/**"
-//                        ).permitAll()
-//                        // All other requests require authentication
-//                        .anyRequest().authenticated()
-//                )
-//                .oauth2ResourceServer(oauth2 -> oauth2
-//                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
-//                )
-//                .sessionManagement(session -> session
-//                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-//                );
-//
-//        return http.build();
-//    }
-//
-//    @Bean
-//    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-//        JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-//
-//        // FIXED: Point to the correct nested path in Keycloak JWT
-//        // Keycloak stores roles in "realm_access.roles" not just "roles"
-//        grantedAuthoritiesConverter.setAuthoritiesClaimName("realm_access.roles");
-//
-//        // FIXED: Don't add ROLE_ prefix since Keycloak already includes it
-//        // This prevents ROLE_ROLE_STUDENT double prefix issue
-//        grantedAuthoritiesConverter.setAuthorityPrefix("");
-//
-//        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-//        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
-//
-//        return jwtAuthenticationConverter;
-//    }
-//
-//    @Bean
-//    public CorsConfigurationSource corsConfigurationSource() {
-//        CorsConfiguration configuration = new CorsConfiguration();
-//        configuration.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:5173"));
-//        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-//        configuration.setAllowedHeaders(Arrays.asList("*"));
-//        configuration.setExposedHeaders(Arrays.asList("Authorization"));
-//        configuration.setAllowCredentials(true);
-//
-//        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-//        source.registerCorsConfiguration("/**", configuration);
-//        return source;
-//    }
-//
-//}
-
-
-// TO DO
-
-//package com.example.appointmentservice.configuration;
-//
-//import org.springframework.beans.factory.annotation.Autowired;
-//import org.springframework.context.annotation.Bean;
-//import org.springframework.context.annotation.Configuration;
-//import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-//import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-//import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-//import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-//import org.springframework.security.config.http.SessionCreationPolicy;
-//import org.springframework.security.web.SecurityFilterChain;
-//import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-//
-//@Configuration
-//@EnableWebSecurity
-//@EnableMethodSecurity(prePostEnabled = true)  // CRITICAL: Enables @PreAuthorize
-//public class SecurityConfig {
-//
-//    @Autowired
-//    private JwtAuthenticationFilter jwtAuthenticationFilter;
-//
-//    @Bean
-//    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-//        http
-//                .csrf(AbstractHttpConfigurer::disable)
-//                .sessionManagement(session ->
-//                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-//                .authorizeHttpRequests(authz -> authz
-//                        // Public endpoints
-//                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-//                        .requestMatchers("/api/v1/appointments/confirm-by-token/**").permitAll()
-//
-//                        // All appointment endpoints require authentication
-//                        // Role-based access controlled by @PreAuthorize in controller
-//                        .requestMatchers("/api/v1/appointments/**").authenticated()
-//
-//                        // All other requests require authentication
-//                        .anyRequest().authenticated()
-//                )
-//                // Add JWT filter to extract username and roles from token
-//                .addFilterBefore(jwtAuthenticationFilter,
-//                        UsernamePasswordAuthenticationFilter.class);
-//
-//        return http.build();
-//    }
-//}
-
-
-// TODO: Add custom user service
-
 package com.example.bookingservice.configuration;
 
 import org.springframework.context.annotation.Bean;
@@ -173,15 +33,20 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(authz -> authz
-                        // Public endpoints
+                        // FIXED: Allow all actuator health endpoints without authentication
+                        // This is critical for Kubernetes liveness/readiness probes
+                        .requestMatchers(
+                                "/actuator/health",
+                                "/actuator/health/**",  // CRITICAL: Added for /actuator/health/liveness and /actuator/health/readiness
+                                "/actuator/info"
+                        ).permitAll()
+                        // Other public endpoints
                         .requestMatchers(
                                 "/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
-                                "/api/bookings/confirm/**",
-                                "/actuator/health",
-                                "/actuator/info"
+                                "/api/bookings/confirm/**"
                         ).permitAll()
                         // All booking endpoints require authentication
                         .requestMatchers("/api/bookings/**").authenticated()

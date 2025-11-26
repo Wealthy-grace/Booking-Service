@@ -107,7 +107,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-    // 🔐 Security and OAuth2
+    // Security and OAuth2
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
@@ -121,7 +121,6 @@ dependencies {
     // =======================
     // 🧾 DATABASE (MongoDB)
     // =======================
-    // REMOVED the excludes to allow embedded MongoDB for tests
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
     // =======================

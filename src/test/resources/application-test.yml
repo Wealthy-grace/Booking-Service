@@ -1,28 +1,28 @@
-spring:
-  data:
-    mongodb:
-      # Embedded MongoDB will automatically use a random available port
-      # No need to specify URI - Spring Boot will auto-configure it
-      auto-index-creation: false
-
-  # Disable security for tests
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
-      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
-
-# Mock external service URLs for tests
-microservices:
-  user-service:
-    url: http://localhost:8081
-  property-service:
-    url: http://localhost:8082
-  appointment-service:
-    url: http://localhost:8083
-
-# Reduce logging noise in tests
-logging:
-  level:
-    org.springframework: WARN
-    org.mongodb: WARN
-    de.flapdoodle.embed.mongo: WARN
+#spring:
+#  data:
+#    mongodb:
+#      # Embedded MongoDB will automatically use a random available port
+#      # No need to specify URI - Spring Boot will auto-configure it
+#      auto-index-creation: false
+#
+#  # Disable security for tests
+#  autoconfigure:
+#    exclude:
+#      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+#      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+#
+## Mock external service URLs for tests
+#microservices:
+#  user-service:
+#    url: http://localhost:8081
+#  property-service:
+#    url: http://localhost:8082
+#  appointment-service:
+#    url: http://localhost:8083
+#
+## Reduce logging noise in tests
+#logging:
+#  level:
+#    org.springframework: WARN
+#    org.mongodb: WARN
+#    de.flapdoodle.embed.mongo: WARN

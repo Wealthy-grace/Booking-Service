@@ -17,35 +17,62 @@ import com.example.bookingservice.persistence.respository.PaymentRepository;
 import com.example.bookingservice.producer.BookingEventProducer;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BookingServiceImpl implements BookingService {
 
+    // REQUIRED dependencies - injected via constructor
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
     private final BookingMapper bookingMapper;
     private final AppointmentServiceClient appointmentServiceClient;
-    private final BookingEventProducer bookingEventProducer;
 
+    // OPTIONAL dependency - RabbitMQ producer (may be null if RabbitMQ is disabled)
+    @Autowired(required = false)
+    private BookingEventProducer bookingEventProducer;
+
+    // Constructor with only required dependencies
+    public BookingServiceImpl(
+            BookingRepository bookingRepository,
+            PaymentRepository paymentRepository,
+            BookingMapper bookingMapper,
+            AppointmentServiceClient appointmentServiceClient) {
+        this.bookingRepository = bookingRepository;
+        this.paymentRepository = paymentRepository;
+        this.bookingMapper = bookingMapper;
+        this.appointmentServiceClient = appointmentServiceClient;
+    }
+
+    /**
+     * Helper method to safely publish events to RabbitMQ
+     * Only publishes if RabbitMQ is enabled and producer is available
+     */
+    private void publishEventSafely(Runnable eventPublisher, String eventDescription) {
+        if (bookingEventProducer != null) {
+            try {
+                eventPublisher.run();
+                log.info(" Published {} event", eventDescription);
+            } catch (Exception e) {
+                log.error(" Failed to publish {} event: {}", eventDescription, e.getMessage(), e);
+                // Don't fail the operation if event publishing fails
+            }
+        } else {
+            log.debug("ℹ RabbitMQ disabled - skipping {} event", eventDescription);
+        }
+    }
 
     // ========== CIRCUIT BREAKER PROTECTED METHOD ==========
 
-//
-//      Get appointment with Circuit Breaker protection
-//     Uses String appointmentId for MongoDB compatibility
-//
     @CircuitBreaker(name = "appointmentService", fallbackMethod = "getAppointmentFallback")
     @Retry(name = "appointmentService")
     public AppointmentResponse getAppointmentWithCircuitBreaker(String appointmentId) {
@@ -53,21 +80,15 @@ public class BookingServiceImpl implements BookingService {
         return appointmentServiceClient.getAppointmentById(appointmentId);
     }
 
-//
-//      Fallback when Appointment Service is unavailable
-//      Must match signature: String appointmentId + Exception
-//
     private AppointmentResponse getAppointmentFallback(String appointmentId, Exception ex) {
-        log.error("⚠️ [BOOKING] APPOINTMENT SERVICE CIRCUIT BREAKER ACTIVATED for ID: {}. Reason: {}",
+        log.error(" [BOOKING] APPOINTMENT SERVICE CIRCUIT BREAKER ACTIVATED for ID: {}. Reason: {}",
                 appointmentId, ex.getMessage());
 
-        // Create fallback AppointmentDto with minimal data
         AppointmentDto fallbackAppointment = new AppointmentDto();
-        fallbackAppointment.setAppointmentId(appointmentId); // MongoDB String ID
+        fallbackAppointment.setAppointmentId(appointmentId);
         fallbackAppointment.setStatus(AppointmentStatus.PENDING);
         fallbackAppointment.setAppointmentTitle("Appointment Temporarily Unavailable");
 
-        // Create fallback AppointmentResponse
         AppointmentResponse fallbackResponse = new AppointmentResponse();
         fallbackResponse.setSuccess(false);
         fallbackResponse.setMessage("Appointment Service temporarily unavailable. Using fallback data.");
@@ -77,63 +98,194 @@ public class BookingServiceImpl implements BookingService {
         return fallbackResponse;
     }
 
-   // BUSINESS LOGIC FOR BOOKINGSERVICEIMPL CODE
-    @Override
-//    @Transactional
-    public BookingDto createBooking(CreateBookingRequest request) {
-        log.info("Creating booking for appointment: {}", request.getAppointmentId());
+    // ========== BOOKING CRUD OPERATIONS ==========
 
-        // Check if booking already exists for this appointment
+//    @Override
+//    public BookingDto createBooking(CreateBookingRequest request) {
+//        log.info("Creating booking for appointment: {}", request.getAppointmentId());
+//
+//        // Check if booking already exists
+//        if (bookingRepository.existsByAppointmentId(request.getAppointmentId())) {
+//            throw new BookingAlreadyExistsException(
+//                    "Booking already exists for appointment: " + request.getAppointmentId()
+//            );
+//        }
+//
+//        // Fetch appointment details
+//        AppointmentResponse appointmentResponse;
+//        try {
+//            appointmentResponse = appointmentServiceClient.getAppointmentById(
+//                    request.getAppointmentId()
+//            );
+//        } catch (Exception e) {
+//            log.error("Failed to fetch appointment: {}", e.getMessage());
+//            throw new AppointmentNotFoundException(
+//                    "Appointment not found: " + request.getAppointmentId()
+//            );
+//        }
+//
+//        if (appointmentResponse == null || !appointmentResponse.isSuccess()) {
+//            throw new AppointmentNotFoundException(
+//                    "Appointment not found: " + request.getAppointmentId()
+//            );
+//        }
+//
+//        AppointmentDto appointment = appointmentResponse.getAppointment();
+//
+//        // Validate appointment status
+//        if (!"CONFIRMED".equalsIgnoreCase(appointment.getStatus().toString()) &&
+//                !"PENDING".equalsIgnoreCase(appointment.getStatus().toString())) {
+//            throw new InvalidBookingException(
+//                    "Cannot book property. Appointment status is: " + appointment.getStatus()
+//            );
+//        }
+//
+//        // Validate property availability
+//        if (Boolean.TRUE.equals(appointment.getPropertyIsRented())) {
+//            throw new InvalidBookingException(
+//                    "Property is not available for booking: " + appointment.getPropertyTitle()
+//            );
+//        }
+//
+//        // Validate dates
+//        if (request.getMoveInDate().isBefore(LocalDateTime.now())) {
+//            throw new InvalidBookingException("Move-in date cannot be in the past");
+//        }
+//
+//        if (request.getMoveOutDate().isBefore(request.getMoveInDate())) {
+//            throw new InvalidBookingException("Move-out date must be after move-in date");
+//        }
+//
+//        // Calculate booking details
+//        BigDecimal monthlyRent = appointment.getPropertyRentAmount();
+//
+//        if (monthlyRent == null || monthlyRent.compareTo(BigDecimal.ZERO) <= 0) {
+//            throw new InvalidBookingException("Invalid rent amount for property");
+//        }
+//
+//        BigDecimal depositAmount = monthlyRent;
+//        BigDecimal totalAmount = monthlyRent.multiply(
+//                BigDecimal.valueOf(request.getBookingDurationMonths())
+//        ).add(depositAmount);
+//
+//        // Create booking entity
+//        BookingEntity booking = BookingEntity.builder()
+//                .appointmentId(appointment.getAppointmentId())
+//                .appointmentTitle(appointment.getAppointmentTitle())
+//                .appointmentDateTime(appointment.getAppointmentDateTime())
+//                .propertyId(appointment.getPropertyId())
+//                .propertyTitle(appointment.getPropertyTitle())
+//                .propertyAddress(appointment.getPropertyAddress())
+//                .propertyIsRented(appointment.getPropertyIsRented())
+//                .propertyImage(appointment.getPropertyImage())
+//                .propertyImage2(appointment.getPropertyImage2())
+//                .propertyImage3(appointment.getPropertyImage3())
+//                .propertyImage4(appointment.getPropertyImage4())
+//                .rentAmount(appointment.getPropertyRentAmount())
+//                .propertyDescription(appointment.getPropertyDescription())
+//                .requesterId(appointment.getRequesterId())
+//                .requesterUsername(appointment.getRequesterUsername())
+//                .requesterName(appointment.getRequesterName())
+//                .requesterEmail(appointment.getRequesterEmail())
+//                .requesterPhone(appointment.getRequesterPhone())
+//                .requesterProfileImage(appointment.getRequesterProfileImage())
+//                .providerId(appointment.getProviderId())
+//                .providerUsername(appointment.getProviderUsername())
+//                .providerName(appointment.getProviderName())
+//                .providerEmail(appointment.getProviderEmail())
+//                .providerPhone(appointment.getProviderPhone())
+//                .providerProfileImage(appointment.getProviderProfileImage())
+//                .bookingDate(LocalDateTime.now())
+//                .moveInDate(request.getMoveInDate())
+//                .moveOutDate(request.getMoveOutDate())
+//                .bookingDurationMonths(request.getBookingDurationMonths())
+//                .totalAmount(totalAmount)
+//                .depositAmount(depositAmount)
+//                .monthlyRent(monthlyRent)
+//                .status(BookingStatus.PENDING)
+//                .notes(request.getNotes())
+//                .paymentStatus(PaymentStatus.PENDING)
+//                .paymentDeadline(LocalDateTime.now().plusDays(7))
+//                .paidAmount(BigDecimal.ZERO)
+//                .remainingAmount(totalAmount)
+//                .paymentMethod(PaymentMethod.CREDIT_CARD)
+//                .paymentType(PaymentType.DEPOSIT)
+//                .cancellationReason(null)
+//                .contractSigned(false)
+//                .emailNotificationSent(false)
+//                .confirmationToken(UUID.randomUUID().toString())
+//                .createdAt(LocalDateTime.now())
+//                .updatedAt(LocalDateTime.now())
+//                .build();
+//
+//        BookingEntity savedBooking = bookingRepository.save(booking);
+//        log.info(" Booking created successfully: {}", savedBooking.getId());
+//
+//        // Publish booking created event (only if RabbitMQ is enabled)
+//        BookingEntity finalSavedBooking = savedBooking;
+//        publishEventSafely(() -> {
+//            BookingEvent event = bookingMapper.toEvent(finalSavedBooking);
+//            bookingEventProducer.publishBookingCreated(event);
+//        }, "BOOKING_CREATED");
+//
+//        return bookingMapper.toDto(savedBooking);
+//    }
+
+    // New version
+    @Override
+    public BookingDto createBooking(CreateBookingRequest request) {
+        log.info("📌 Creating booking for appointment ID: {}", request.getAppointmentId());
+
+        // 1️ Check if booking already exists
         if (bookingRepository.existsByAppointmentId(request.getAppointmentId())) {
+            log.warn("⚠️ Booking already exists for appointment ID: {}", request.getAppointmentId());
             throw new BookingAlreadyExistsException(
-                    "Booking already exists for appointment: " + request.getAppointmentId()
+                    "Booking already exists for appointment ID: " + request.getAppointmentId()
             );
         }
 
-        // Fetch ENRICHED appointment details from Appointment Service
+        // 2⃣ Fetch appointment details
         AppointmentResponse appointmentResponse;
         try {
-            appointmentResponse = appointmentServiceClient.getAppointmentById(
-                    request.getAppointmentId()
-            );
+            appointmentResponse = appointmentServiceClient.getAppointmentById(request.getAppointmentId());
         } catch (Exception e) {
-            log.error("Failed to fetch appointment: {}", e.getMessage());
+            log.error("Failed to fetch appointment: {}", e.getMessage(), e);
             throw new AppointmentNotFoundException(
-                    "Appointment not found: " + request.getAppointmentId()
+                    "Appointment not found for ID: " + request.getAppointmentId()
             );
         }
 
         if (appointmentResponse == null || !appointmentResponse.isSuccess()) {
             throw new AppointmentNotFoundException(
-                    "Appointment not found: " + request.getAppointmentId()
+                    "Appointment not found or service unavailable for ID: " + request.getAppointmentId()
             );
         }
 
         AppointmentDto appointment = appointmentResponse.getAppointment();
 
-        // Validate appointment status
-        if (!"CONFIRMED".equalsIgnoreCase(appointment.getStatus().toString()) &&
-                !"PENDING".equalsIgnoreCase(appointment.getStatus().toString())) {
-            throw new InvalidBookingException(
-                    "Cannot book property. Appointment status is: " + appointment.getStatus()
-            );
+        // 3⃣ Null checks & validation
+        if (appointment.getPropertyRentAmount() == null) {
+            throw new InvalidBookingException("Property rent amount cannot be null");
+        }
+        if (appointment.getRequesterId() == null) {
+            throw new InvalidBookingException("Requester ID cannot be null");
+        }
+        if (appointment.getProviderId() == null) {
+            throw new InvalidBookingException("Provider ID cannot be null");
+        }
+        if (appointment.getPropertyId() == null) {
+            throw new InvalidBookingException("Property ID cannot be null");
         }
 
-        // Validate property availability
-//        if (appointment.getPropertyIsRented() != null && appointment.getPropertyIsRented()) {
-//            throw new InvalidBookingException(
-//                    "Property is not available for booking: " + appointment.getPropertyTitle()
-//            );
-//        }
+        if (!"CONFIRMED".equalsIgnoreCase(String.valueOf(appointment.getStatus())) &&
+                !"PENDING".equalsIgnoreCase(String.valueOf(appointment.getStatus()))) {
+            throw new InvalidBookingException("Cannot book property. Appointment status: " + appointment.getStatus());
+        }
 
-        // NEW CODE - NULL SAFE
         if (Boolean.TRUE.equals(appointment.getPropertyIsRented())) {
-            throw new InvalidBookingException(
-                    "Property is not available for booking: " + appointment.getPropertyTitle()
-            );
+            throw new InvalidBookingException("Property is already rented: " + appointment.getPropertyTitle());
         }
 
-        // Validate dates
         if (request.getMoveInDate().isBefore(LocalDateTime.now())) {
             throw new InvalidBookingException("Move-in date cannot be in the past");
         }
@@ -142,19 +294,13 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingException("Move-out date must be after move-in date");
         }
 
-        // Calculate booking details
+        // 4⃣ Calculate amounts
         BigDecimal monthlyRent = appointment.getPropertyRentAmount();
-
-        if (monthlyRent == null || monthlyRent.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new InvalidBookingException("Invalid rent amount for property");
-        }
-
         BigDecimal depositAmount = monthlyRent;
-        BigDecimal totalAmount = monthlyRent.multiply(
-                BigDecimal.valueOf(request.getBookingDurationMonths())
-        ).add(depositAmount);
+        BigDecimal totalAmount = monthlyRent.multiply(BigDecimal.valueOf(request.getBookingDurationMonths()))
+                .add(depositAmount);
 
-        // Create booking
+        // 5️ Build booking entity
         BookingEntity booking = BookingEntity.builder()
                 .appointmentId(appointment.getAppointmentId())
                 .appointmentTitle(appointment.getAppointmentTitle())
@@ -162,12 +308,12 @@ public class BookingServiceImpl implements BookingService {
                 .propertyId(appointment.getPropertyId())
                 .propertyTitle(appointment.getPropertyTitle())
                 .propertyAddress(appointment.getPropertyAddress())
-                .propertyIsRented(appointment.getPropertyIsRented())
+                .propertyIsRented(Boolean.TRUE.equals(appointment.getPropertyIsRented()))
                 .propertyImage(appointment.getPropertyImage())
                 .propertyImage2(appointment.getPropertyImage2())
                 .propertyImage3(appointment.getPropertyImage3())
                 .propertyImage4(appointment.getPropertyImage4())
-                .rentAmount(appointment.getPropertyRentAmount())
+                .rentAmount(monthlyRent)
                 .propertyDescription(appointment.getPropertyDescription())
                 .requesterId(appointment.getRequesterId())
                 .requesterUsername(appointment.getRequesterUsername())
@@ -189,14 +335,13 @@ public class BookingServiceImpl implements BookingService {
                 .depositAmount(depositAmount)
                 .monthlyRent(monthlyRent)
                 .status(BookingStatus.PENDING)
-                .notes(request.getNotes())
                 .paymentStatus(PaymentStatus.PENDING)
-                .paymentDeadline(LocalDateTime.now().plusDays(7))
                 .paidAmount(BigDecimal.ZERO)
                 .remainingAmount(totalAmount)
+                .paymentDeadline(LocalDateTime.now().plusDays(7))
                 .paymentMethod(PaymentMethod.CREDIT_CARD)
                 .paymentType(PaymentType.DEPOSIT)
-                .cancellationReason(null)
+                .notes(request.getNotes())
                 .contractSigned(false)
                 .emailNotificationSent(false)
                 .confirmationToken(UUID.randomUUID().toString())
@@ -204,18 +349,24 @@ public class BookingServiceImpl implements BookingService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        BookingEntity savedBooking = bookingRepository.save(booking);
-        log.info("Booking created successfully: {}", savedBooking.getId());
-
-        // Publish booking created event to RabbitMQ
+        // 6️ Save booking safely
+        BookingEntity savedBooking;
         try {
-            BookingEvent event = bookingMapper.toEvent(savedBooking);
-            bookingEventProducer.publishBookingCreated(event);
-            log.info("Published BOOKING_CREATED event for booking: {}", savedBooking.getId());
+            savedBooking = bookingRepository.save(booking);
+            log.info(" Booking saved successfully: {}", savedBooking.getId());
         } catch (Exception e) {
-            log.error("Failed to publish booking created event: {}", e.getMessage(), e);
-            // Don't fail the booking creation if event publishing fails
+            log.error("Failed to save booking: {}", e.getMessage(), e);
+            throw new BookingPersistenceException("Could not save booking. Check data and try again.");
         }
+
+        // 7️ Publish event safely
+        BookingEntity finalSavedBooking = savedBooking;
+        publishEventSafely(() -> {
+            BookingEvent event = bookingMapper.toEvent(finalSavedBooking);
+            if (bookingEventProducer != null) {
+                bookingEventProducer.publishBookingCreated(event);
+            }
+        }, "BOOKING_CREATED");
 
         return bookingMapper.toDto(savedBooking);
     }
@@ -280,6 +431,8 @@ public class BookingServiceImpl implements BookingService {
         return bookingMapper.toDtoList(bookings);
     }
 
+    // ========== BOOKING STATUS MANAGEMENT ==========
+
     @Override
     @Transactional
     public BookingDto updateBookingStatus(String bookingId, BookingStatus status) {
@@ -295,10 +448,9 @@ public class BookingServiceImpl implements BookingService {
 
         // Publish status update event if status changed
         if (oldStatus != status) {
-            try {
-                BookingEvent event = bookingMapper.toEvent(updatedBooking);
-
-                // Publish specific events based on the new status
+            BookingEntity finalUpdatedBooking = updatedBooking;
+            publishEventSafely(() -> {
+                BookingEvent event = bookingMapper.toEvent(finalUpdatedBooking);
                 if (status == BookingStatus.CONFIRMED) {
                     bookingEventProducer.publishBookingConfirmed(event);
                 } else if (status == BookingStatus.COMPLETED) {
@@ -306,18 +458,13 @@ public class BookingServiceImpl implements BookingService {
                 } else if (status == BookingStatus.EXPIRED) {
                     bookingEventProducer.publishBookingExpired(event);
                 }
-
-                log.info("Published booking status update event for booking: {}", updatedBooking.getId());
-            } catch (Exception e) {
-                log.error("Failed to publish booking status update event: {}", e.getMessage(), e);
-            }
+            }, "BOOKING_STATUS_UPDATE");
         }
 
         return bookingMapper.toDto(updatedBooking);
     }
 
     @Override
-//    @Transactional
     public BookingDto cancelBooking(String bookingId, String reason) {
         log.info("Cancelling booking: {}", bookingId);
         BookingEntity booking = bookingRepository.findById(bookingId)
@@ -347,34 +494,63 @@ public class BookingServiceImpl implements BookingService {
         }
 
         BookingEntity cancelledBooking = bookingRepository.save(booking);
-        log.info("Booking cancelled successfully: {}", bookingId);
+        log.info(" Booking cancelled successfully: {}", bookingId);
 
-        // Publish booking cancelled event to RabbitMQ
-        try {
-            BookingEvent event = bookingMapper.toEvent(cancelledBooking);
+        // Publish booking cancelled event
+        BookingEntity finalCancelledBooking = cancelledBooking;
+        publishEventSafely(() -> {
+            BookingEvent event = bookingMapper.toEvent(finalCancelledBooking);
             event.setCancelledAt(LocalDateTime.now());
             bookingEventProducer.publishBookingCancelled(event);
-            log.info("Published BOOKING_CANCELLED event for booking: {}", cancelledBooking.getId());
-        } catch (Exception e) {
-            log.error("Failed to publish booking cancelled event: {}", e.getMessage(), e);
-        }
+        }, "BOOKING_CANCELLED");
 
         return bookingMapper.toDto(cancelledBooking);
     }
 
     @Override
-//    @Transactional
     public void deleteBooking(String bookingId) {
         log.info("Deleting booking: {}", bookingId);
         if (!bookingRepository.existsById(bookingId)) {
             throw new BookingNotFoundException("Booking not found: " + bookingId);
         }
         bookingRepository.deleteById(bookingId);
-        log.info("Booking deleted successfully: {}", bookingId);
+        log.info(" Booking deleted successfully: {}", bookingId);
     }
 
     @Override
-//    @Transactional
+    public BookingDto confirmBooking(String confirmationToken) {
+        log.info("Confirming booking with token: {}", confirmationToken);
+
+        BookingEntity booking = bookingRepository.findByConfirmationToken(confirmationToken)
+                .orElseThrow(() -> new BookingNotFoundException(
+                        "Booking not found with confirmation token"
+                ));
+
+        if (booking.getPaymentStatus() != PaymentStatus.COMPLETED) {
+            throw new InvalidBookingException(
+                    "Cannot confirm booking. Payment not completed."
+            );
+        }
+
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setUpdatedAt(LocalDateTime.now());
+
+        BookingEntity confirmedBooking = bookingRepository.save(booking);
+        log.info(" Booking confirmed successfully: {}", confirmedBooking.getId());
+
+        // Publish booking confirmed event
+        BookingEntity finalConfirmedBooking = confirmedBooking;
+        publishEventSafely(() -> {
+            BookingEvent event = bookingMapper.toEvent(finalConfirmedBooking);
+            bookingEventProducer.publishBookingConfirmed(event);
+        }, "BOOKING_CONFIRMED");
+
+        return bookingMapper.toDto(confirmedBooking);
+    }
+
+    // ========== PAYMENT OPERATIONS ==========
+
+    @Override
     public PaymentDto processPayment(ProcessPaymentRequest request) {
         log.info("Processing payment for booking: {}", request.getBookingId());
 
@@ -443,18 +619,17 @@ public class BookingServiceImpl implements BookingService {
 
         // Publish payment completed event if payment was successful
         if (payment.getStatus() == PaymentStatus.COMPLETED) {
-            try {
-                BookingEvent event = bookingMapper.toEvent(updatedBooking);
-                event.setTransactionId(savedPayment.getTransactionId());
-                event.setPaymentReference(savedPayment.getPaymentReference());
+            PaymentEntity finalSavedPayment = savedPayment;
+            BookingEntity finalUpdatedBooking = updatedBooking;
+            publishEventSafely(() -> {
+                BookingEvent event = bookingMapper.toEvent(finalUpdatedBooking);
+                event.setTransactionId(finalSavedPayment.getTransactionId());
+                event.setPaymentReference(finalSavedPayment.getPaymentReference());
                 bookingEventProducer.publishBookingPaymentCompleted(event);
-                log.info("Published BOOKING_PAYMENT_COMPLETED event for booking: {}", updatedBooking.getId());
-            } catch (Exception e) {
-                log.error("Failed to publish payment completed event: {}", e.getMessage(), e);
-            }
+            }, "BOOKING_PAYMENT_COMPLETED");
         }
 
-        log.info("Payment processed successfully: {}", savedPayment.getId());
+        log.info(" Payment processed successfully: {}", savedPayment.getId());
         return bookingMapper.toDto(savedPayment);
     }
 
@@ -473,39 +648,5 @@ public class BookingServiceImpl implements BookingService {
         log.info("Fetching payments for payer: {}", payerId);
         List<PaymentEntity> payments = paymentRepository.findByPayerId(payerId);
         return bookingMapper.toPaymentDtoList(payments);
-    }
-
-    @Override
-//    @Transactional
-    public BookingDto confirmBooking(String confirmationToken) {
-        log.info("Confirming booking with token: {}", confirmationToken);
-
-        BookingEntity booking = bookingRepository.findByConfirmationToken(confirmationToken)
-                .orElseThrow(() -> new BookingNotFoundException(
-                        "Booking not found with confirmation token"
-                ));
-
-        if (booking.getPaymentStatus() != PaymentStatus.COMPLETED) {
-            throw new InvalidBookingException(
-                    "Cannot confirm booking. Payment not completed."
-            );
-        }
-
-        booking.setStatus(BookingStatus.CONFIRMED);
-        booking.setUpdatedAt(LocalDateTime.now());
-
-        BookingEntity confirmedBooking = bookingRepository.save(booking);
-        log.info("Booking confirmed successfully: {}", confirmedBooking.getId());
-
-        // Publish booking confirmed event
-        try {
-            BookingEvent event = bookingMapper.toEvent(confirmedBooking);
-            bookingEventProducer.publishBookingConfirmed(event);
-            log.info("Published BOOKING_CONFIRMED event for booking: {}", confirmedBooking.getId());
-        } catch (Exception e) {
-            log.error("Failed to publish booking confirmed event: {}", e.getMessage(), e);
-        }
-
-        return bookingMapper.toDto(confirmedBooking);
     }
 }

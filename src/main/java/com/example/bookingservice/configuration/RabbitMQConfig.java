@@ -8,6 +8,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -17,6 +18,11 @@ import org.springframework.context.annotation.Configuration;
 // * Creates exchanges, queues, and bindings for event-driven communication
 @Slf4j
 @Configuration
+@ConditionalOnProperty(
+        name = "spring.rabbitmq.enabled",
+        havingValue = "true",
+        matchIfMissing = false  // Don't load if property is missing
+)
 public class RabbitMQConfig {
 
     // Exchange and Queue Names
@@ -117,52 +123,52 @@ public class RabbitMQConfig {
 
     //  Initialize RabbitMQ infrastructure on application startup
     // This ensures all exchanges, queues, and bindings are created
-    @Bean
-    public CommandLineRunner initRabbitMQ(RabbitAdmin rabbitAdmin,
-                                          DirectExchange exchange,
-                                          Queue appointmentQueue,
-                                          Queue bookingQueue,
-                                          Binding appointmentBinding,
-                                          Binding bookingBinding) {
-        return args -> {
-            log.info("========================================");
-            log.info("Initializing RabbitMQ Infrastructure...");
-            log.info("========================================");
-
-            try {
-                // Declare exchange
-                rabbitAdmin.declareExchange(exchange);
-                log.info("✓ Exchange declared: {}", EXCHANGE_NAME);
-
-                // Declare queues
-                rabbitAdmin.declareQueue(appointmentQueue);
-                log.info("✓ Queue declared: {}", APPOINTMENT_QUEUE);
-
-                rabbitAdmin.declareQueue(bookingQueue);
-                log.info("✓ Queue declared: {}", BOOKING_QUEUE);
-
-                // Declare bindings
-                rabbitAdmin.declareBinding(appointmentBinding);
-                log.info("✓ Binding created: {} -> {} [{}]",
-                        APPOINTMENT_QUEUE, EXCHANGE_NAME, APPOINTMENT_ROUTING_KEY);
-
-                rabbitAdmin.declareBinding(bookingBinding);
-                log.info("✓ Binding created: {} -> {} [{}]",
-                        BOOKING_QUEUE, EXCHANGE_NAME, BOOKING_ROUTING_KEY);
-
-                log.info("========================================");
-                log.info("RabbitMQ Infrastructure Ready!");
-                log.info("Management UI: http://localhost:15672");
-                log.info("========================================");
-
-            } catch (Exception e) {
-                log.error("Failed to initialize RabbitMQ infrastructure", e);
-                log.error("Please check:");
-                log.error("  1. RabbitMQ is running (docker ps | grep rabbitmq)");
-                log.error("  2. Connection settings in application.properties");
-                log.error("  3. Credentials are correct (default: guest/guest)");
-                throw e;
-            }
-        };
-    }
+//    @Bean
+//    public CommandLineRunner initRabbitMQ(RabbitAdmin rabbitAdmin,
+//                                          DirectExchange exchange,
+//                                          Queue appointmentQueue,
+//                                          Queue bookingQueue,
+//                                          Binding appointmentBinding,
+//                                          Binding bookingBinding) {
+//        return args -> {
+//            log.info("========================================");
+//            log.info("Initializing RabbitMQ Infrastructure...");
+//            log.info("========================================");
+//
+//            try {
+//                // Declare exchange
+//                rabbitAdmin.declareExchange(exchange);
+//                log.info("✓ Exchange declared: {}", EXCHANGE_NAME);
+//
+//                // Declare queues
+//                rabbitAdmin.declareQueue(appointmentQueue);
+//                log.info("✓ Queue declared: {}", APPOINTMENT_QUEUE);
+//
+//                rabbitAdmin.declareQueue(bookingQueue);
+//                log.info("✓ Queue declared: {}", BOOKING_QUEUE);
+//
+//                // Declare bindings
+//                rabbitAdmin.declareBinding(appointmentBinding);
+//                log.info("✓ Binding created: {} -> {} [{}]",
+//                        APPOINTMENT_QUEUE, EXCHANGE_NAME, APPOINTMENT_ROUTING_KEY);
+//
+//                rabbitAdmin.declareBinding(bookingBinding);
+//                log.info("✓ Binding created: {} -> {} [{}]",
+//                        BOOKING_QUEUE, EXCHANGE_NAME, BOOKING_ROUTING_KEY);
+//
+//                log.info("========================================");
+//                log.info("RabbitMQ Infrastructure Ready!");
+//                log.info("Management UI: http://localhost:15672");
+//                log.info("========================================");
+//
+//            } catch (Exception e) {
+//                log.error("Failed to initialize RabbitMQ infrastructure", e);
+//                log.error("Please check:");
+//                log.error("  1. RabbitMQ is running (docker ps | grep rabbitmq)");
+//                log.error("  2. Connection settings in application.properties");
+//                log.error("  3. Credentials are correct (default: guest/guest)");
+//                throw e;
+//            }
+//        };
+//    }
 }

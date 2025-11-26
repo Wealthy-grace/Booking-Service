@@ -5,11 +5,10 @@ import com.example.bookingservice.domain.dto.BookingDto;
 import com.example.bookingservice.domain.dto.PaymentDto;
 import com.example.bookingservice.domain.request.CreateBookingRequest;
 import com.example.bookingservice.domain.request.ProcessPaymentRequest;
-import com.example.bookingservice.domain.response.BookingResponse;
 import com.example.bookingservice.domain.response.BookingListResponse;
+import com.example.bookingservice.domain.response.BookingResponse;
 import com.example.bookingservice.domain.response.PaymentResponse;
 import com.example.bookingservice.persistence.model.BookingStatus;
-
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +21,6 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.List;
-
 
 @Slf4j
 @RestController
@@ -47,8 +45,8 @@ public class BookingController {
                 .body(BookingResponse.success("Booking created successfully", booking));
     }
 
+
     @GetMapping("/{id}")
-    //@PreAuthorize("isAuthenticated()")
     @PreAuthorize("hasRole('STUDENT') or hasRole('ADMIN')")
     @Operation(summary = "Get booking by ID")
     public ResponseEntity<BookingResponse> getBookingById(@PathVariable String id) {
@@ -102,6 +100,7 @@ public class BookingController {
         return ResponseEntity.ok(BookingListResponse.success("Bookings retrieved successfully", bookings));
     }
 
+    // ========== UPDATE BOOKING ==========
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN', 'LANDLORD')")
     @Operation(summary = "Update booking status")
@@ -126,6 +125,17 @@ public class BookingController {
         return ResponseEntity.ok(BookingResponse.success("Booking cancelled successfully", booking));
     }
 
+    @PutMapping("/property/{propertyId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'LANDLORD')")
+    @Operation(summary = "Update property status if property is rented")
+    public ResponseEntity<BookingResponse> updatePropertyStatus(
+            @PathVariable String propertyId,
+            @RequestBody BookingDto request) {
+        log.info("REST request to update property status if property is rented: {}", propertyId);
+        BookingDto booking = bookingService.updatePropertyStatus(propertyId, request.getPropertyIsRented());
+        return ResponseEntity.ok(BookingResponse.success("Property status updated successfully", booking));
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Delete booking", description = "Admin only")
@@ -135,7 +145,7 @@ public class BookingController {
         return ResponseEntity.ok(BookingResponse.success("Booking deleted successfully", null));
     }
 
-
+    // ========== PAYMENT OPERATIONS ==========
     @PostMapping("/payments")
     @PreAuthorize("hasAnyRole('STUDENT', 'TENANT')")
     @Operation(summary = "Process payment for booking")
@@ -165,29 +175,12 @@ public class BookingController {
         return ResponseEntity.ok(PaymentResponse.successList("Payments retrieved successfully", payments));
     }
 
-
-
+    // ========== CONFIRM BOOKING ==========
     @GetMapping("/confirm/{token}")
     @Operation(summary = "Confirm booking with token")
     public ResponseEntity<BookingResponse> confirmBooking(@PathVariable String token) {
         log.info("REST request to confirm booking with token");
         BookingDto booking = bookingService.confirmBooking(token);
         return ResponseEntity.ok(BookingResponse.success("Booking confirmed successfully", booking));
-    }
-
-    @PutMapping("/property/{propertyId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'LANDLORD')")
-    @Operation(summary = "Update property status if property is rented")
-    public ResponseEntity<BookingResponse> updatePropertyStatus(
-            @PathVariable String propertyId,
-            @RequestBody BookingDto request) {
-
-        log.info("REST request to update property status if property is rented: {}", propertyId);
-
-        BookingDto booking = bookingService.updatePropertyStatus(propertyId, request.getPropertyIsRented());
-
-        return ResponseEntity.ok(
-                BookingResponse.success("Property status updated successfully", booking)
-        );
     }
 }

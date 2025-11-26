@@ -1,0 +1,516 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: booking-service-config
+  namespace: student-housing
+data:
+  SPRING_APPLICATION_NAME: "Booking-Service"
+  SERVER_PORT: "8084"
+  SPRING_PROFILES_ACTIVE: "kubernetes"
+
+  # MongoDB Configuration
+  SPRING_DATA_MONGODB_URI: "mongodb://booking-mongodb:27017/booking-service"
+  SPRING_DATA_MONGODB_AUTO_INDEX_CREATION: "true"
+
+  SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING: "true"
+
+  # Disable OAuth2 Client auto-configuration
+  SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration"
+
+  # RabbitMQ Configuration
+  SPRING_RABBITMQ_HOST: "rabbitmq"
+  SPRING_RABBITMQ_PORT: "5672"
+  SPRING_RABBITMQ_USERNAME: "guest"
+  SPRING_RABBITMQ_PASSWORD: "guest"
+  SPRING_RABBITMQ_ENABLED: "true"
+
+  # Actuator configuration
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "always"
+  MANAGEMENT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ADD_ADDITIONAL_PATHS: "true"
+  MANAGEMENT_ENDPOINTS_WEB_BASE_PATH: "/actuator"
+  MANAGEMENT_SERVER_PORT: "8084"
+
+  # CRITICAL FIX: Allow unauthenticated access to health endpoints
+  MANAGEMENT_ENDPOINT_HEALTH_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_PUBLIC_KEY_LOCATION: ""
+
+  # Security - OAuth2 Resource Server Configuration
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ENABLED: "true"
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "http://localhost:8080/realms/friendly-housing"
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs"
+
+  # OAuth2 Client Configuration
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID: "booking-service"
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_AUTHORIZATION_GRANT_TYPE: "authorization_code"
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE: "openid,profile,email"
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI: "http://localhost:8080/realms/friendly-housing"
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_AUTHORIZATION_URI: "http://localhost:8080/realms/friendly-housing/protocol/openid-connect/auth"
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_TOKEN_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/token"
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_USER_INFO_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/userinfo"
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_JWK_SET_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs"
+
+  # Keycloak Admin Client Configuration
+  KEYCLOAK_AUTH_SERVER_URL: "http://keycloak:8080"
+  KEYCLOAK_REALM: "friendly-housing"
+  KEYCLOAK_RESOURCE: "booking-service"
+
+  # Microservices URLs - K8s Service Names
+  MICROSERVICES_APPOINTMENT_SERVICE_URL: "http://appointment-service-app:8083"
+  MICROSERVICES_PROPERTY_SERVICE_URL: "http://property-service-app:8082"
+  MICROSERVICES_USER_SERVICE_URL: "http://user-service-app:8081"
+
+  # Swagger Configuration
+  SPRINGDOC_API_DOCS_PATH: "/api-docs"
+  SPRINGDOC_SWAGGER_UI_PATH: "/swagger-ui.html"
+  SPRINGDOC_SWAGGER_UI_ENABLED: "true"
+
+  # Logging Configuration
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_EXAMPLE_BOOKINGSERVICE: "DEBUG"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: "DEBUG"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_DATA_MONGODB: "DEBUG"
+
+  SPRING_CLOUD_COMPATIBILITY_VERIFIER_ENABLED: "false"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: booking-service-secret
+  namespace: student-housing
+type: Opaque
+stringData:
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET: "1CSNSXeI6YveuAXeY5wFho6vxuLz5irpmi"
+  KEYCLOAK_CREDENTIALS_SECRET: "1CSNSXeI6YveuAXeY5wFho6vxuLz5irp"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: booking-mongodb-pvc
+  namespace: student-housing
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: booking-mongodb-config-pvc
+  namespace: student-housing
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-mongodb
+  namespace: student-housing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: booking-mongodb
+  template:
+    metadata:
+      labels:
+        app: booking-mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_DATABASE
+              value: "booking-service"
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+            - name: mongodb-config
+              mountPath: /data/configdb
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          # FIXED: Increased delays and timeouts for stability
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - db.runCommand("ping").ok
+                - --quiet
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - db.runCommand("ping").ok
+                - --quiet
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: mongodb-data
+          persistentVolumeClaim:
+            claimName: booking-mongodb-pvc
+        - name: mongodb-config
+          persistentVolumeClaim:
+            claimName: booking-mongodb-config-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-mongodb
+  namespace: student-housing
+spec:
+  type: ClusterIP
+  ports:
+    - port: 27017
+      targetPort: 27017
+  selector:
+    app: booking-mongodb
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: student-housing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.12-management-alpine
+          ports:
+            - containerPort: 5672
+              name: amqp
+            - containerPort: 15672
+              name: management
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: "guest"
+            - name: RABBITMQ_DEFAULT_PASS
+              value: "guest"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          # FIXED: Increased delays for stability
+          livenessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 15
+          readinessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - check_running
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            timeoutSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: student-housing
+spec:
+  type: NodePort
+  ports:
+    - port: 5672
+      targetPort: 5672
+      nodePort: 30620
+      name: amqp
+    - port: 15672
+      targetPort: 15672
+      nodePort: 30672
+      name: management
+  selector:
+    app: rabbitmq
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-service
+  namespace: student-housing
+  labels:
+    app: booking-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: booking-service
+  template:
+    metadata:
+      labels:
+        app: booking-service
+    spec:
+      initContainers:
+        - name: wait-for-mongodb
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for MongoDB..."
+              # FIXED: Added retry logic with timeout
+              max_attempts=60
+              attempt=0
+              until nc -z booking-mongodb 27017 || [ $attempt -ge $max_attempts ]; do 
+                echo "MongoDB unavailable - sleeping (attempt $attempt/$max_attempts)"
+                sleep 3
+                attempt=$((attempt + 1))
+              done
+              if [ $attempt -ge $max_attempts ]; then
+                echo "Warning: MongoDB may not be fully ready, continuing anyway..."
+              else
+                echo "MongoDB is up"
+              fi
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
+
+        - name: wait-for-rabbitmq
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for RabbitMQ..."
+              # FIXED: Added retry logic with timeout
+              max_attempts=60
+              attempt=0
+              until nc -z rabbitmq 5672 || [ $attempt -ge $max_attempts ]; do 
+                echo "RabbitMQ unavailable - sleeping (attempt $attempt/$max_attempts)"
+                sleep 3
+                attempt=$((attempt + 1))
+              done
+              if [ $attempt -ge $max_attempts ]; then
+                echo "Warning: RabbitMQ may not be fully ready, continuing anyway..."
+              else
+                echo "RabbitMQ is up"
+              fi
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
+
+        - name: wait-for-keycloak
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for Keycloak..."
+              # FIXED: Added retry logic with timeout
+              max_attempts=60
+              attempt=0
+              until nc -z keycloak 8080 || [ $attempt -ge $max_attempts ]; do 
+                echo "Keycloak unavailable - sleeping (attempt $attempt/$max_attempts)"
+                sleep 3
+                attempt=$((attempt + 1))
+              done
+              if [ $attempt -ge $max_attempts ]; then
+                echo "Warning: Keycloak may not be fully ready, continuing anyway..."
+              else
+                echo "Keycloak is up"
+              fi
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
+
+      containers:
+        - name: booking-service
+          image: godfrey10/booking-service:latest
+          imagePullPolicy: Always  # FIXED: Always pull to get latest changes
+          ports:
+            - containerPort: 8084
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: booking-service-config
+          env:
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: booking-service-secret
+                  key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET
+            - name: KEYCLOAK_CREDENTIALS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: booking-service-secret
+                  key: KEYCLOAK_CREDENTIALS_SECRET
+
+            # JVM Configuration
+            - name: JAVA_OPTS
+              value: >-
+                -Xms512m 
+                -Xmx1024m 
+                -XX:+UseG1GC 
+                -Djava.security.egd=file:/dev/./urandom
+
+            # Pod Info for debugging
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+
+          # FIXED: Increased startup probe settings for resilience
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8084
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            failureThreshold: 40
+            timeoutSeconds: 5
+
+          # FIXED: More lenient probe settings
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8084
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 5
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8084
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+            timeoutSeconds: 5
+
+---
+# ClusterIP Service for internal communication (API Gateway uses this)
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service-app
+  namespace: student-housing
+  labels:
+    app: booking-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+      protocol: TCP
+  selector:
+    app: booking-service
+
+---
+# NodePort Service for external access (port-forward, debugging)
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service-nodeport
+  namespace: student-housing
+  labels:
+    app: booking-service
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+      nodePort: 30084
+      protocol: TCP
+  selector:
+    app: booking-service
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: booking-service-hpa
+  namespace: student-housing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: booking-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
