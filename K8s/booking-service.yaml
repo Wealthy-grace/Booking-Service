@@ -41,7 +41,8 @@ data:
   # Security - OAuth2 Resource Server Configuration
   SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ENABLED: "true"
   SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "http://localhost:8080/realms/friendly-housing"
-  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs"
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "http://keycloak.student-housing.svc.cluster.local:8080/realms/friendly-housing/protocol/openid-connect/certs"
+  #SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs"
 
   # OAuth2 Client Configuration
   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID: "booking-service"
@@ -54,7 +55,8 @@ data:
   SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_JWK_SET_URI: "http://keycloak:8080/realms/friendly-housing/protocol/openid-connect/certs"
 
   # Keycloak Admin Client Configuration
-  KEYCLOAK_AUTH_SERVER_URL: "http://keycloak:8080"
+  #KEYCLOAK_AUTH_SERVER_URL: "http://keycloak:8080"
+  KEYCLOAK_AUTH_SERVER_URL: "http://keycloak.student-housing.svc.cluster.local:8080"
   KEYCLOAK_REALM: "friendly-housing"
   KEYCLOAK_RESOURCE: "booking-service"
 
@@ -84,8 +86,8 @@ metadata:
   namespace: student-housing
 type: Opaque
 stringData:
-  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET: "1CSNSXeI6YveuAXeY5wFho6vxuLz5irpmi"
-  KEYCLOAK_CREDENTIALS_SECRET: "1CSNSXeI6YveuAXeY5wFho6vxuLz5irp"
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET: "S4rm7oHR1WZh6g0kXtfbGsvC4t8wraThLb"
+  KEYCLOAK_CREDENTIALS_SECRET: "S4rm7oHR1WZh6g0kXtfbGsvC4t8wraThLb"
 
 ---
 apiVersion: v1
@@ -149,7 +151,6 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "500m"
-          # FIXED: Increased delays and timeouts for stability
           livenessProbe:
             exec:
               command:
@@ -230,7 +231,6 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "500m"
-          # FIXED: Increased delays for stability
           livenessProbe:
             exec:
               command:
@@ -280,6 +280,12 @@ metadata:
     app: booking-service
 spec:
   replicas: 2
+  revisionHistoryLimit: 3  # ADDED: Only keep 3 old ReplicaSets
+  strategy:                 # ADDED: Rolling update strategy
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1           # Allow 1 extra pod during updates
+      maxUnavailable: 0     # Keep all current pods running during updates
   selector:
     matchLabels:
       app: booking-service
@@ -296,7 +302,6 @@ spec:
             - -c
             - |
               echo "Waiting for MongoDB..."
-              # FIXED: Added retry logic with timeout
               max_attempts=60
               attempt=0
               until nc -z booking-mongodb 27017 || [ $attempt -ge $max_attempts ]; do 
@@ -324,7 +329,6 @@ spec:
             - -c
             - |
               echo "Waiting for RabbitMQ..."
-              # FIXED: Added retry logic with timeout
               max_attempts=60
               attempt=0
               until nc -z rabbitmq 5672 || [ $attempt -ge $max_attempts ]; do 
@@ -352,7 +356,6 @@ spec:
             - -c
             - |
               echo "Waiting for Keycloak..."
-              # FIXED: Added retry logic with timeout
               max_attempts=60
               attempt=0
               until nc -z keycloak 8080 || [ $attempt -ge $max_attempts ]; do 
@@ -376,7 +379,7 @@ spec:
       containers:
         - name: booking-service
           image: godfrey10/booking-service:latest
-          imagePullPolicy: Always  # FIXED: Always pull to get latest changes
+          imagePullPolicy: Always
           ports:
             - containerPort: 8084
               name: http
@@ -426,7 +429,6 @@ spec:
               memory: "1Gi"
               cpu: "500m"
 
-          # FIXED: Increased startup probe settings for resilience
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -436,7 +438,6 @@ spec:
             failureThreshold: 40
             timeoutSeconds: 5
 
-          # FIXED: More lenient probe settings
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness

@@ -67,3 +67,8 @@ management:
   endpoint:
     health:
       show-details: always
+
+# Allow circular references
+      spring:
+        main:
+          allow-circular-references: true
